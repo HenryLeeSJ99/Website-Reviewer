@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reviewer Mode</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--ink:#16202b;--mute:#6a7785;--line:#dde2e8;--accent:#1d6fb8;
+--must:#d93636;--suggest:#e08a00;--question:#7a4fd1;--fixed:#1d9a6c;--verified:#8a96a3}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 system-ui,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);height:100vh;display:flex;flex-direction:column}
+button,select,textarea,input{font:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 10px;color:var(--ink)}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+button.danger{color:var(--must)}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header .title{font-weight:700;margin-right:6px}
+header .sp{flex:1}
+.seg{display:inline-flex}.seg button{border-radius:0;margin-left:-1px}.seg button:first-child{border-radius:6px 0 0 6px;margin-left:0}.seg button:last-child{border-radius:0 6px 6px 0}
+main{flex:1;display:flex;min-height:0}
+#stage{flex:1;overflow:auto;padding:12px;display:flex;justify-content:center;background:#e3e6ea}
+#frameWrap{background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.18);width:100%;height:100%;min-height:400px;transition:width .15s}
+iframe{width:100%;height:100%;border:0;display:block}
+aside{width:380px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#composer{padding:10px 12px;border-bottom:1px solid var(--line);background:#fffbe9;display:none}
+#composer textarea{width:100%;min-height:70px;resize:vertical;padding:6px;border:1px solid var(--line);border-radius:6px}
+#composer .row{display:flex;gap:6px;margin-top:6px;align-items:center}
+#composer .ctx{font-size:12px;color:var(--mute);word-break:break-all;margin-bottom:6px}
+.filters{padding:8px 12px;border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.filters select{padding:4px}
+#list{flex:1;overflow:auto}
+.item{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.item.sel{background:#eef5fc}
+.item .top{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mute)}
+.badge{display:inline-block;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;line-height:18px}
+.num{display:inline-block;min-width:20px;height:20px;border-radius:10px;color:#fff;text-align:center;font-size:11px;line-height:20px;font-weight:700}
+.item .txt{margin:4px 0;white-space:pre-wrap}
+.item .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.item .actions button{padding:2px 8px;font-size:12px}
+.thread{margin-top:6px;border-left:3px solid var(--line);padding-left:8px;font-size:13px}
+.thread small{color:var(--mute)}
+.warn{color:var(--must);font-size:12px}
+.empty{padding:30px 16px;color:var(--mute);text-align:center}
+.tip{position:fixed;bottom:12px;left:12px;background:var(--ink);color:#fff;border-radius:6px;padding:6px 10px;font-size:12px;display:none;z-index:50}
+dialog{border:1px solid var(--line);border-radius:10px;padding:16px;max-width:720px;width:92vw}
+dialog textarea{width:100%;height:50vh;font:12px/1.4 ui-monospace,Consolas,monospace}
+.sev-must{background:var(--must)}.sev-suggest{background:var(--suggest)}.sev-question{background:var(--question)}
+.st-open{background:var(--must)}.st-fixed{background:var(--fixed)}.st-verified{background:var(--verified)}.st-wontfix{background:var(--mute)}
+</style>
+</head>
+<body>
+<header>
+  <span class="title" id="projTitle">Reviewer Mode</span>
+  <select id="pageSel" title="Page"></select>
+  <span class="seg" id="vpSeg">
+    <button data-w="100%" class="on">Desktop</button><button data-w="768px">Tablet</button><button data-w="390px">Mobile</button>
+  </span>
+  <button id="modeBtn" class="primary" title="Toggle comment mode (C)">+ Comment mode (C)</button>
+  <span class="sp"></span>
+  <button id="meBtn" title="Your name on comments (defaults to this computer's name). Click to change."></button>
+  <span class="seg" id="roleSeg" title="Who is using the tool">
+    <button data-r="reviewer" class="on">Reviewer</button><button data-r="designer">Designer</button>
+  </span>
+  <select id="roundSel" title="Review round"></select>
+  <button id="newRoundBtn">New round…</button>
+  <button id="reloadBtn" title="Re-read review files from disk (after git pull)">⟳ Reload</button>
+  <button id="exportBtn">Export for designer</button>
+  <button id="importBtn">Import</button>
+  <input type="file" id="importFile" accept=".json" hidden>
+</header>
+<main>
+  <div id="stage"><div id="frameWrap"><iframe id="frame"></iframe></div></div>
+  <aside>
+    <div id="composer">
+      <div class="ctx" id="cCtx"></div>
+      <textarea id="cText" placeholder="What should change? Be specific (ctrl+enter to save)"></textarea>
+      <div class="row">
+        <select id="cSev"><option value="must">Must fix</option><option value="suggest">Suggestion</option><option value="question">Question</option></select>
+        <span style="flex:1"></span>
+        <button id="cCancel">Cancel</button><button id="cSave" class="primary">Save</button>
+      </div>
+    </div>
+    <div class="filters">
+      <select id="fStatus"><option value="active">Needs action</option><option value="all">All</option><option value="open">Open</option><option value="fixed">Fixed – to verify</option><option value="verified">Verified</option><option value="wontfix">Won't fix</option></select>
+      <select id="fScope"><option value="page">This page</option><option value="all">All pages</option></select>
+      <span id="count" style="color:var(--mute);margin-left:auto"></span>
+    </div>
+    <div id="list"></div>
+  </aside>
+</main>
+<div class="tip" id="tip"></div>
+<dialog id="exportDlg">
+  <h3 style="margin-top:0">Review for designer</h3>
+  <textarea id="exportText" readonly></textarea>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button id="copyMd" class="primary">Copy markdown</button>
+    <button id="dlMd">Download .md</button>
+    <button id="dlJson">Download .json (re-importable)</button>
+    <span style="flex:1"></span>
+    <button id="closeDlg">Close</button>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const frame = $('#frame');
+let me = 'unknown';
+function setMe(n){me=n;try{localStorage.setItem('rv_name',n)}catch{}$('#meBtn').textContent='👤 '+n}
+let info, data, curPage = '', commentMode = false, selId = null, draft = null, saveTimer = null;
+let role = localStorage.getItem('rv_role') || 'reviewer';
+const SEV = {must:'Must fix', suggest:'Suggestion', question:'Question'};
+const SEVCOL = {must:'#d93636', suggest:'#e08a00', question:'#7a4fd1'};
+const STAT = {open:'Open', fixed:'Fixed – to verify', verified:'Verified', wontfix:"Won't fix"};
+const STCOL = {open:null, fixed:'#1d9a6c', verified:'#8a96a3', wontfix:'#6a7785'};
+
+function tip(t){const e=$('#tip');e.textContent=t;e.style.display='block';clearTimeout(tip.t);tip.t=setTimeout(()=>e.style.display='none',2200)}
+
+function fixDupIds(){ // two people can raise #5 at once on different machines; bump the later one
+  const seen=new Set();let changed=false;
+  data.comments.slice().sort((a,b)=>String(a.createdAt).localeCompare(b.createdAt)).forEach(c=>{
+    if(seen.has(c.id)){c.id=Math.max(0,...data.comments.map(x=>x.id))+1;changed=true}seen.add(c.id)});
+  data.nextId=Math.max(0,...data.comments.map(c=>c.id))+1;if(changed)save();
+}
+async function reloadFromDisk(quiet){
+  if(saveTimer||draft)return;
+  const d=await (await fetch('/api/review')).json();if(!d)return;
+  if(JSON.stringify(d.comments)===JSON.stringify(data.comments)&&d.rounds.length===data.rounds.length)return;
+  data=d;fixDupIds();fillRounds();renderPins();renderList();if(!quiet)tip('Reloaded review from disk');
+}
+addEventListener('focus',()=>reloadFromDisk(false));
+function liveRefresh(){
+  const es=new EventSource('/api/events');
+  es.addEventListener('reviews',()=>reloadFromDisk(false));
+  es.addEventListener('site',async()=>{
+    info=await (await fetch('/api/info')).json();
+    const cur=$('#pageSel').value;
+    $('#pageSel').innerHTML=info.pages.map(p=>`<option>${esc(p)}</option>`).join('');$('#pageSel').value=cur;
+    if(draft)return; // don't yank the page while a comment is being written
+    try{const y=frame.contentWindow.scrollY;frame.addEventListener('load',()=>{try{frame.contentWindow.scrollTo(0,y)}catch{}},{once:true});frame.contentWindow.location.reload();tip('Site updated — refreshed')}catch{loadPage(curPage)}
+  });
+}
+async function init(){
+  info = await (await fetch('/api/info')).json();
+  let saved=null;try{saved=localStorage.getItem('rv_name')}catch{}
+  setMe(saved||info.host);
+  data = await (await fetch('/api/review')).json();
+  if(!data) data = {project:info.name, rounds:[{n:1, createdAt:new Date().toISOString(), note:'', commit:info.git}], comments:[], nextId:1};
+  fixDupIds();liveRefresh();
+  $('#projTitle').textContent = 'Review · ' + info.name;
+  document.title = 'Review · ' + info.name;
+  $('#pageSel').innerHTML = info.pages.map(p=>`<option>${esc(p)}</option>`).join('');
+  const start = info.pages.includes('index.html') ? 'index.html' : info.pages[0];
+  loadPage(start);
+  setRole(role); fillRounds(); renderList();
+}
+function save(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>fetch('/api/review',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>tip('Save failed!')),250)}
+const curRound = () => data.rounds[data.rounds.length-1];
+function fillRounds(){
+  $('#roundSel').innerHTML = data.rounds.map(r=>`<option value="${r.n}">Round ${r.n}${r.n===curRound().n?' (current)':''}</option>`).join('');
+  $('#roundSel').value = curRound().n;
+}
+
+/* ---------- page / viewport / mode ---------- */
+function loadPage(p){curPage=p;$('#pageSel').value=p;frame.src='/'+p.split('/').map(encodeURIComponent).join('/')}
+$('#pageSel').onchange=e=>loadPage(e.target.value);
+$('#vpSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;[...$('#vpSeg').children].forEach(x=>x.classList.toggle('on',x===b));$('#frameWrap').style.width=b.dataset.w;setTimeout(renderPins,200)};
+function setMode(on){commentMode=on;$('#modeBtn').classList.toggle('on',on);$('#modeBtn').textContent=on?'● Comment mode ON (C) — click anything':'+ Comment mode (C)';if(!on)hideHover();tip(on?'Click any element to pin a comment. Esc to stop.':'Browse mode — links work normally.')}
+$('#modeBtn').onclick=()=>setMode(!commentMode);
+function setRole(r){role=r;localStorage.setItem('rv_role',r);[...$('#roleSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.r===r));renderList()}
+$('#meBtn').onclick=()=>{const n=prompt('Name shown on your comments:',me);if(n&&n.trim())setMe(n.trim())};
+$('#roleSeg').onclick=e=>{const b=e.target.closest('button');if(b)setRole(b.dataset.r)};
+addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;if(e.key==='c'||e.key==='C')setMode(!commentMode);if(e.key==='Escape'){setMode(false);cancelDraft()}});
+
+/* ---------- inside iframe ---------- */
+let hoverEl=null, layer=null;
+frame.addEventListener('load',()=>{
+  let doc; try{doc=frame.contentDocument; if(!doc||!doc.body)return}catch{return}
+  let loc=decodeURIComponent(frame.contentWindow.location.pathname).replace(/^\//,'');
+  if(loc===''||loc.endsWith('/'))loc+='index.html';
+  const rel=loc; if(rel&&info.pages.includes(rel)){curPage=rel;$('#pageSel').value=rel}
+  const st=doc.createElement('style');st.textContent='.__rv_hover{outline:2px solid #1d6fb8!important;outline-offset:-2px;cursor:crosshair!important}';doc.head.appendChild(st);
+  doc.addEventListener('mousemove',e=>{if(!commentMode)return;const el=pick(e);if(el!==hoverEl){hideHover();hoverEl=el;el&&el.classList.add('__rv_hover')}},true);
+  doc.addEventListener('click',e=>{if(!commentMode)return;if(e.target.closest&&e.target.closest('#__rv_layer'))return;e.preventDefault();e.stopPropagation();startDraft(e)},true);
+  ['submit','mousedown','mouseup'].forEach(t=>doc.addEventListener(t,e=>{if(commentMode){e.preventDefault();e.stopPropagation()}},true));
+  frame.contentWindow.addEventListener('resize',renderPins);
+  frame.contentWindow.addEventListener('scroll',()=>requestAnimationFrame(renderPins),{passive:true});
+  new frame.contentWindow.ResizeObserver(()=>renderPins()).observe(doc.body);
+  frame.contentWindow.addEventListener('load',renderPins);
+  setTimeout(renderPins,300);setTimeout(renderPins,1200);
+  renderPins();renderList();
+});
+function pick(e){const el=e.target;return(el&&el.nodeType===1&&!el.closest('#__rv_layer'))?el:null}
+function hideHover(){if(hoverEl){hoverEl.classList.remove('__rv_hover');hoverEl=null}}
+function cssPath(el){
+  const doc=el.ownerDocument,parts=[];
+  while(el&&el.nodeType===1&&el!==doc.body&&parts.length<8){
+    if(el.id&&doc.querySelectorAll('#'+CSS.escape(el.id)).length===1){parts.unshift('#'+CSS.escape(el.id));break}
+    let s=el.tagName.toLowerCase();
+    const cls=[...el.classList].filter(c=>!c.startsWith('__rv')&&!/^(is-|has-|active|open|show|hover)/.test(c)).slice(0,2);
+    if(cls.length)s+='.'+cls.map(c=>CSS.escape(c)).join('.');
+    const sib=[...el.parentNode.children].filter(c=>c.tagName===el.tagName);
+    if(sib.length>1)s+=`:nth-of-type(${sib.indexOf(el)+1})`;
+    parts.unshift(s);el=el.parentNode;
+  }
+  return parts.join(' > ');
+}
+function startDraft(e){
+  const el=pick(e);if(!el)return;const r=el.getBoundingClientRect();
+  const win=frame.contentWindow;
+  draft={selector:cssPath(el),fx:r.width?(e.clientX-r.left)/r.width:.5,fy:r.height?(e.clientY-r.top)/r.height:.5,
+    page:curPage,vw:win.innerWidth,snippet:(el.innerText||el.alt||el.getAttribute('aria-label')||'').trim().replace(/\s+/g,' ').slice(0,80),tag:el.tagName.toLowerCase()};
+  $('#cCtx').innerHTML=`<b>${esc(curPage)}</b> · &lt;${esc(draft.tag)}&gt;${draft.snippet?' “'+esc(draft.snippet)+'”':''}<br>${esc(draft.selector)} · ${draft.vw}px wide`;
+  $('#composer').style.display='block';$('#cText').value='';$('#cText').focus();renderPins();
+}
+function cancelDraft(){draft=null;$('#composer').style.display='none';renderPins()}
+$('#cCancel').onclick=cancelDraft;
+$('#cSave').onclick=()=>{
+  const text=$('#cText').value.trim();if(!text||!draft)return;
+  const c={uid:Date.now().toString(36)+Math.random().toString(36).slice(2,6),id:data.nextId++,round:curRound().n,page:draft.page,selector:draft.selector,fx:draft.fx,fy:draft.fy,vw:draft.vw,tag:draft.tag,snippet:draft.snippet,
+    text,severity:$('#cSev').value,status:'open',author:me,role,createdAt:new Date().toISOString(),thread:[]};
+  data.comments.push(c);selId=c.id;draft=null;$('#composer').style.display='none';save();renderPins();renderList();
+};
+$('#cText').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))$('#cSave').click()});
+
+function pinColor(c){return c.status==='open'?SEVCOL[c.severity]:STCOL[c.status]}
+function anchor(c,doc,win){
+  let el=null;try{el=doc.querySelector(c.selector)}catch{}
+  if(!el)return null;
+  const r=el.getBoundingClientRect();
+  return{x:r.left+win.scrollX+c.fx*r.width,y:r.top+win.scrollY+c.fy*r.height};
+}
+function renderPins(){
+  let doc,win;try{doc=frame.contentDocument;win=frame.contentWindow;if(!doc||!doc.body)return}catch{return}
+  let L=doc.getElementById('__rv_layer');if(L)L.remove();
+  L=doc.createElement('div');L.id='__rv_layer';L.style.cssText='position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;font:700 12px system-ui';
+  doc.body.appendChild(L);
+  const mk=(x,y,label,color,id,ghost)=>{
+    const p=doc.createElement('div');
+    p.style.cssText=`position:absolute;left:${x-11}px;top:${y-11}px;width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.4);cursor:pointer;${ghost?'opacity:.7;':''}${id===selId?'outline:3px solid #fff;box-shadow:0 0 0 5px '+color+';':''}`;
+    const s=doc.createElement('span');s.textContent=label;s.style.transform='rotate(45deg)';p.appendChild(s);
+    if(id)p.onclick=e=>{e.preventDefault();e.stopPropagation();select(id)};
+    L.appendChild(p);
+  };
+  data.comments.filter(c=>c.page===curPage&&visible(c)).forEach(c=>{const a=anchor(c,doc,win);if(a)mk(a.x,a.y,c.id,pinColor(c),c.id)});
+  if(draft&&draft.page===curPage){let el=null;try{el=doc.querySelector(draft.selector)}catch{}if(el){const r=el.getBoundingClientRect();mk(r.left+win.scrollX+draft.fx*r.width,r.top+win.scrollY+draft.fy*r.height,'+','#1d6fb8',0,true)}}
+}
+
+/* ---------- sidebar list ---------- */
+function visible(c){
+  const f=$('#fStatus').value;
+  if(f==='active')return c.status==='open'||c.status==='fixed';
+  return f==='all'||c.status===f;
+}
+function renderList(){
+  if(!data)return;
+  const scope=$('#fScope').value,doc=(()=>{try{return frame.contentDocument}catch{return null}})();
+  const rs=data.comments.filter(c=>visible(c)&&(scope==='all'||c.page===curPage));
+  $('#count').textContent=rs.length+' shown · '+data.comments.filter(c=>c.status==='open').length+' open total';
+  if(!rs.length){$('#list').innerHTML='<div class="empty">No comments here.<br>Press <b>C</b> and click any element to add one.</div>';return}
+  $('#list').innerHTML='';
+  rs.sort((a,b)=>a.page.localeCompare(b.page)||a.id-b.id).forEach(c=>{
+    const d=document.createElement('div');d.className='item'+(c.id===selId?' sel':'');d.dataset.id=c.id;
+    let orphan='';
+    if(c.page===curPage&&doc&&doc.body){let el=null;try{el=doc.querySelector(c.selector)}catch{}if(!el)orphan='<div class="warn">⚠ Element no longer found — the design changed here. Re-check manually.</div>'}
+    const carried=c.round<curRound().n?` · raised R${c.round}`:'';
+    d.innerHTML=`<div class="top"><span class="num" style="background:${pinColor(c)}">${c.id}</span>
+      <span class="badge sev-${c.severity}">${SEV[c.severity]}</span>
+      <span class="badge st-${c.status}">${STAT[c.status]}</span>
+      <span>${esc(c.page)}${carried}</span><span style="margin-left:auto">👤 ${esc(c.author)}</span></div>
+      <div class="txt">${esc(c.text)}</div>${orphan}
+      ${c.thread.map(t=>`<div class="thread"><small>${esc(t.who)}${t.role?' · '+esc(t.role):''}</small><br>${esc(t.text)}</div>`).join('')}
+      <div class="actions"></div>`;
+    const A=d.querySelector('.actions');
+    const btn=(label,fn,cls)=>{const b=document.createElement('button');b.textContent=label;if(cls)b.className=cls;b.onclick=e=>{e.stopPropagation();fn()};A.appendChild(b)};
+    if(role==='designer'){
+      if(c.status==='open')btn('Mark fixed',()=>setStatus(c,'fixed'));
+      if(c.status==='open')btn("Won't fix",()=>{const r=prompt('Reason?');if(r!==null){reply(c,r,true);setStatus(c,'wontfix')}});
+    }else{
+      if(c.status==='fixed'){btn('✓ Verify',()=>setStatus(c,'verified'));btn('Reopen',()=>setStatus(c,'open'))}
+      if(c.status==='verified'||c.status==='wontfix')btn('Reopen',()=>setStatus(c,'open'));
+      if(c.status==='open')btn('Edit',()=>{const t=prompt('Edit comment',c.text);if(t){c.text=t;save();renderList()}});
+    }
+    btn('Reply',()=>{const t=prompt('Reply');if(t)reply(c,t)});
+    btn('Delete',()=>{if(confirm('Delete comment #'+c.id+'?')){data.comments=data.comments.filter(x=>x!==c);save();renderPins();renderList()}},'danger');
+    d.onclick=()=>select(c.id);
+    $('#list').appendChild(d);
+  });
+}
+function reply(c,t,quiet){c.thread.push({who:me,role,text:t,at:new Date().toISOString()});save();if(!quiet)renderList()}
+function setStatus(c,s){c.status=s;c.thread.push({who:me,role,text:'→ '+STAT[s],at:new Date().toISOString()});save();renderPins();renderList()}
+function select(id){
+  selId=id;const c=data.comments.find(x=>x.id===id);if(!c)return;
+  if(c.page!==curPage){loadPage(c.page);frame.addEventListener('load',()=>setTimeout(()=>scrollTo(c),400),{once:true})}else scrollTo(c);
+  renderPins();renderList();
+}
+function scrollTo(c){
+  try{const doc=frame.contentDocument,win=frame.contentWindow;const a=anchor(c,doc,win);if(a)win.scrollTo({top:Math.max(0,a.y-win.innerHeight/3),behavior:'smooth'});renderPins()}catch{}
+  const el=document.querySelector(`.item[data-id="${c.id}"]`);el&&el.scrollIntoView({block:'nearest'});
+}
+$('#fStatus').onchange=()=>{renderPins();renderList()};
+$('#fScope').onchange=renderList;
+
+/* ---------- rounds ---------- */
+$('#newRoundBtn').onclick=()=>{
+  const open=data.comments.filter(c=>c.status==='open').length,fixed=data.comments.filter(c=>c.status==='fixed').length;
+  const note=prompt(`Start round ${curRound().n+1}?\n\n${open} open and ${fixed} awaiting verification carry over.\nOptional note for this round (e.g. what the designer sent):`,'');
+  if(note===null)return;
+  data.rounds.push({n:curRound().n+1,createdAt:new Date().toISOString(),note,commit:info.git});
+  save();fillRounds();renderList();tip('Round '+curRound().n+' started');
+};
+$('#roundSel').onchange=()=>{$('#roundSel').value=curRound().n;tip('Rounds: new comments are tagged with the current round; older ones keep their original round.')};
+
+/* ---------- export ---------- */
+function buildMarkdown(){
+  const R=curRound(),by=(arr)=>arr.reduce((m,c)=>((m[c.page]=m[c.page]||[]).push(c),m),{});
+  const line=c=>{const fl=(s)=>s.replace(/\n+/g,' ');
+    let s=`- **#${c.id}** [${SEV[c.severity]}${c.round<R.n?`, raised R${c.round}`:''}, by ${c.author}] —${fl(c.text)}\n  - Where: \`${c.selector}\`${c.snippet?` ("${c.snippet}")`:''}, viewport ${c.vw}px`;
+    c.thread.filter(t=>!t.text.startsWith('→')).forEach(t=>s+=`\n  - ${t.who}: ${fl(t.text)}`);return s};
+  const section=(title,arr)=>{if(!arr.length)return'';let s=`\n## ${title} (${arr.length})\n`;const g=by(arr);Object.keys(g).sort().forEach(p=>{s+=`\n**${p}**\n${g[p].map(line).join('\n')}\n`});return s};
+  const open=data.comments.filter(c=>c.status==='open'),
+    mine=(sev)=>open.filter(c=>c.severity===sev);
+  let md=`# Design review — ${data.project} — Round ${R.n}\n\n`;
+  md+=`Date: ${new Date().toLocaleDateString()}${R.commit?` · Reviewed at commit \`${R.commit.commit}\` “${R.commit.subject}”${R.commit.dirty?' (+uncommitted changes)':''}`:''}\n`;
+  if(R.note)md+=`Note: ${R.note}\n`;
+  const v=data.comments.filter(c=>c.status==='verified').length;
+  md+=`\nSummary: ${open.length} open (${mine('must').length} must-fix, ${mine('suggest').length} suggestions, ${mine('question').length} questions) · ${data.comments.filter(c=>c.status==='fixed').length} awaiting my verification · ${v} verified · ${data.comments.filter(c=>c.status==='wontfix').length} won't fix\n`;
+  md+=section('Must fix',mine('must'))+section('Suggestions',mine('suggest'))+section('Questions',mine('question'));
+  md+=section('Marked fixed — I will re-check next round',data.comments.filter(c=>c.status==='fixed'));
+  md+=`\n---\nWhen done, mark each item fixed (or reply) and send back so I can verify in round ${R.n+1}.\n`;
+  return md;
+}
+$('#reloadBtn').onclick=async()=>{const r=await fetch('/api/info');info=await r.json();await reloadFromDisk(false);loadPage(curPage)};
+$('#exportBtn').onclick=()=>{$('#exportText').value=buildMarkdown();$('#exportDlg').showModal()};
+$('#closeDlg').onclick=()=>$('#exportDlg').close();
+const dl=(name,txt,type)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click()};
+const stamp=()=>`${data.project}-round${curRound().n}`;
+$('#copyMd').onclick=async()=>{await navigator.clipboard.writeText($('#exportText').value);tip('Copied')};
+$('#dlMd').onclick=()=>dl(stamp()+'.md',$('#exportText').value,'text/markdown');
+$('#dlJson').onclick=()=>dl(stamp()+'.json',JSON.stringify(data,null,2),'application/json');
+
+/* ---------- import / merge ---------- */
+$('#importBtn').onclick=()=>$('#importFile').click();
+$('#importFile').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const inc=JSON.parse(await f.text());let n=0,u=0;
+    inc.comments.forEach(ic=>{
+      if(!ic.uid)ic.uid=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+      const mine=data.comments.find(c=>c.uid===ic.uid);
+      if(mine){ if(ic.thread.length>=mine.thread.length&&(ic.status!==mine.status||ic.thread.length!==mine.thread.length)){Object.assign(mine,{status:ic.status,thread:ic.thread});u++} }
+      else{ic.id=data.nextId++;data.comments.push(ic);n++}
+    });
+    inc.rounds.forEach(r=>{if(!data.rounds.find(x=>x.n===r.n))data.rounds.push(r)});data.rounds.sort((a,b)=>a.n-b.n);
+    save();fillRounds();renderPins();renderList();tip(`Imported: ${n} new, ${u} updated`);
+  }catch{tip('Not a valid review file')}
+  e.target.value='';
+};
+init();
+</script>
+</body>
+</html>
